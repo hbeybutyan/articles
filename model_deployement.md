@@ -1,4 +1,4 @@
-# Deploy your model to produciton.
+# Deploy your model to production.
 
 Machine learning gathers more and more attention with each day. With that, demand for production ready deployments of ML models increases drastically.
 In this article we are going to dicsuss how to deply your machine learning model to production.
