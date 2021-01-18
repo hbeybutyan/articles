@@ -16,7 +16,7 @@ And, at the end, after torturing you with all these nightmare, we'll finish with
 
 
 The most part of resources available in net suggest you to deploy ML model behind a Flask API and serve it.
-Something like:
+Something like this [Thanks to Luigi Patruno for good series of articles](https://mlinproduction.com/):
 
 
 ```
