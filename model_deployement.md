@@ -78,7 +78,6 @@ To understand fancy things happening when deploying your flask app wioth nginx a
 Let's create a simple main.py with following content:
 
 ```
-
 import sys
 
 from flask import Flask
@@ -95,3 +94,115 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True, port=80)
 ```
 
+This is toop simple to comment something.
+Now lets create a class which will represent our trained model.
+We'll load the model once an instace is created and make predictions per user request. If translated to Python:
+
+```
+from time import sleep
+
+class FancyModel:
+  def __init__(self):
+    # Here we load pretrained model. It lasts some long period
+    sleep(0.05)
+
+  def predict(self, text):
+    sleep(0.005)
+    return "Can't tell anything smart about: {}".format(text)
+```
+
+The article is not about any particular model or ML probem. That is why we modeled a result of long sleepless nights, of tremedous work you have done to obtain a model which at last behaves somewhat reasonable, with this simple class.
+In real life you will use your favorite lib to load pretrained model here. Will, maybe, do some input validation also.
+Here we keep it simple. We assume that loading a model takes 50mls and making prediction takes 5 mls.
+
+
+Glueing all this together we have this:
+
+```
+import sys
+from FancyModel import FancyModel
+
+from flask import Flask
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def are_you_sure():
+    fnc = FancyModel()
+    return fnc.predit(request.get_json().text)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", debug=True, port=80)
+```
+
+This is ugly. With each incoming request we load the model.
+This is like if you'll call tech support of your TV provider and they'll keep you on line for an hour.
+I bet they'll miss your sign on next year contract.
+So let's go little further and do another ugly thing.
+
+```
+import sys
+from FancyModel import FancyModel
+
+from flask import Flask
+
+fnc = FancyModel()
+app = Flask(__name__)
+
+
+@app.route("/")
+def are_you_sure():
+    return fnc.predit(request.get_json().text)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", debug=True, port=80)
+```
+
+Yeeehaa. It does not need to load model with each request now. Isn't this good? Definitely No.
+The proiblem with this is that some frameworks you may use may be not thread safe.
+For example google "tensorflow fork safety". And this may be the case not only with tensorflow and forking.
+So let's go further. We need each model to live in it's own process.
+Here we have multiple options. E.g. go ahead with pure java. Create a pool of long living processes, take care of lifetime of those etc. 
+We'll not do so. Instead we'll use such a inhabitant of uwsgi as [mule](https://uwsgi-docs.readthedocs.io/en/latest/Mules.html).
+Let's add a mule to our project:
+
+```
+import uwsgi
+import json
+import os
+from FancyModel import FancyModel
+from serving.config import TEXT_KEY, CACHE_NAME
+
+
+if __name__ == '__main__':
+    fnc = FancyModel()
+    while True:
+        uwsgi.mule_get_msg()
+        req = uwsgi.queue_pull()
+        if req is None:
+            continue
+        json_in = json.loads(req.decode("utf-8"))
+        text = json_in[TEXT_KEY]
+        # to store transliterations
+        json_out = {"res": fnc.predict(text)}
+        uwsgi.cache_update(json_in.get("id"), json.dumps(json_out, ensure_ascii=False), 0, CACHE_NAME)
+```
+With this we now need to make some configuration changes to uwsgi. And here is the new configuration.
+
+```
+[uwsgi]
+module = main
+callable = app
+mule=translit_mule.py
+mule=translit_mule.py
+mule=translit_mule.py
+mule=translit_mule.py
+
+master = true
+queue = 100
+queue-blocksize = 2097152
+cache2 = name=fcache,items=10,blocksize=2097152
+```
+
+Let's go line by line.
