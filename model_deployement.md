@@ -163,9 +163,52 @@ Yeeehaa. It does not need to load model with each request now. Isn't this good? 
 The proiblem with this is that some frameworks you may use may be not thread safe.
 For example google "tensorflow fork safety". And this may be the case not only with tensorflow and forking.
 So let's go further. We need each model to live in it's own process.
-Here we have multiple options. E.g. go ahead with pure java. Create a pool of long living processes, take care of lifetime of those etc. 
+Here we have multiple options. E.g. go ahead with pure python. Create a pool of long living processes, take care of lifetime of those etc. 
 We'll not do so. Instead we'll use such a inhabitant of uwsgi as [mule](https://uwsgi-docs.readthedocs.io/en/latest/Mules.html).
+And here is how the request will be servied now:
+
+user -> nginx -> uwsgi -> app.main -> queue -> mules -> cache -> uwsgi -> ngnix -> user
+
+Once http server gets the requst and forwards it to our application we:
+    1. Generate a uuid for the request and put the request to the queue.
+    2. Messege the mules. If all the tasks are complete the mules are waiting for aknowledgement that there is a taks to serve.
+    3. Wait for results to apear in the cache
+In their turn, mules:
+    1. Listen for the aknopwledgement messege.
+    2. Once it is received, poll the queue of tasks,
+    3. Make prediction and add result to cache with request uuid as key
+
+
 Let's add a mule to our project:
+First, we now need to make some configuration changes to uwsgi. And here is the new configuration.
+
+```
+[uwsgi]
+module = main
+callable = app
+mule=hard_working_mule.py
+mule=hard_working_mule.py
+mule=hard_working_mule.py
+mule=hard_working_mule.py
+
+master = true
+queue = 100
+queue-blocksize = 2097152
+cache2 = name=fcache,items=10,blocksize=2097152
+```
+
+Let's go line by line.
+uWSGI server needs to know where to find the application’s callable and the first 2 lines are about that.
+Next we specify what will be run by each mule and, as you can see, we want 4 mules to be initialized.
+Code run by each mule comes shortly.
+Next uwsgi [queue](https://uwsgi-docs.readthedocs.io/en/latest/Queue.html)  and [cache](https://uwsgi-docs.readthedocs.io/en/latest/Caching.html) are initialized.
+Ok, I know you noticed it. We missed a line 
+```
+master = true
+```
+With this we initiate a thread called "the cache sweeper". It's purpose is to remove expired keys from cache. Kind of guard if we'll miss something.
+
+As promissed, this is what each mule is going to do:
 
 ```
 import uwsgi
@@ -188,21 +231,30 @@ if __name__ == '__main__':
         json_out = {"res": fnc.predict(text)}
         uwsgi.cache_update(json_in.get("id"), json.dumps(json_out, ensure_ascii=False), 0, CACHE_NAME)
 ```
-With this we now need to make some configuration changes to uwsgi. And here is the new configuration.
+And the main logic:
 
 ```
-[uwsgi]
-module = main
-callable = app
-mule=translit_mule.py
-mule=translit_mule.py
-mule=translit_mule.py
-mule=translit_mule.py
+app = Flask(__name__)
+api = Api(app)
 
-master = true
-queue = 100
-queue-blocksize = 2097152
-cache2 = name=fcache,items=10,blocksize=2097152
+def process_request(json_in):
+    uid = str(uuid.uuid4())
+    json_in["id"] = uid
+    uwsgi.queue_push(json.dumps(json_in))
+    # Actual content of message does not really matter
+    # This is just to triger mule execution
+    uwsgi.mule_msg("s")
+    while not uwsgi.cache_exists(uid, CACHE_NAME):
+        continue
+    res = uwsgi.cache_get(uid, CACHE_NAME)
+    uwsgi.cache_del(uid, CACHE_NAME)
+    return Response(response=res,
+                            status=200,
+                            mimetype="application/json")
+
+
+@app.route('/predict', methods=['POST'])
+def predict(source, target):
+    return process_request(request.get_json())
 ```
 
-Let's go line by line.
