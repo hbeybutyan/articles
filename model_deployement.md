@@ -265,3 +265,25 @@ But wait. Who says that 4 mules are good choice? How do we came up with this num
 "But wait" - you can say. - "We can scale the app to serve more requests."
 Ok. Package all this mess in docker and scale with replication. In that case the granularity of our scaling is 4 mules, plus processes running main code, etc. This is a classical wast of resources.
 What if we have a lot of models which must be served (maybe we are providing translation from 45 languages and have separate model trained for each pair). What must be the strategy? Load all in a single mule and probably run out of queue? Keep another 4 mules for each model and waste as much resources as possible?
+Another thing to take care: What if mule takes the request and dies during serving it. We hang waiting for the result to appear in the cache.
+And it goes worse with each particular solution bringing new questions to the table.
+
+So what to do? Tadaaaam: Meet (Ray)[https://docs.ray.io/en/master/index.html]
+Lets not talk a lot about how good it is and start using it.
+I am not going to describe all the steps of deploying Ray. It is well described in the documentation. Also thay have incrediblely responsive community. Try asking your questions on Slack channel if you have one.
+So, assuming there is aleady ray cluster launched deploying our model will be something like:
+
+```
+# connect to Ray cluster
+ray.init(address="auto")
+serve.start(detached=True, http_options={"host": "0.0.0.0"})
+client.create_backend("lr:v1", FancyModel)
+client.create_endpoint("fancy_predictor", backend="lr:v1", route="/predict")
+```
+Look at github for detailed test setup on your local minikube.
+
+Yeeehaaa. It is there. Try to request it. And you know what? It comes with candies: scaling, incremental rollout, splitting traffic between backends (say different versions of trained model), session affinity, monitoring and many more.
+
+## Summary
+
+We started with a simple option of deploying ML model in a toy, non production grade Flask service. Than developed it to a more robust, produciton ready, still very messy solution. Finally we have used Ray, as it is advertised, - simple, universal API for building distributed applications. With all the tools it provides it is much easier now to deploy your models to the prodction. In conjuction with other ML R&D, Ops, tools (like MLFlow, aimhubio, etc..) it is now much easier to manage lifecycle of your ML product from training, evaluating your model to deploying it to production.
