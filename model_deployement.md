@@ -201,7 +201,7 @@ Let's go line by line.
 uWSGI server needs to know where to find the application’s callable and the first 2 lines are about that.
 Next we specify what will be run by each mule and, as you can see, we want 4 mules to be initialized.
 Code run by each mule comes shortly.
-Next uwsgi [queue](https://uwsgi-docs.readthedocs.io/en/latest/Queue.html)  and [cache](https://uwsgi-docs.readthedocs.io/en/latest/Caching.html) are initialized.
+Next uwsgi [queue](https://uwsgi-docs.readthedocs.io/en/latest/Queue.html) and [cache](https://uwsgi-docs.readthedocs.io/en/latest/Caching.html) are initialized.
 Ok, I know you noticed it. We missed a line 
 ```
 master = true
@@ -258,3 +258,10 @@ def predict(source, target):
     return process_request(request.get_json())
 ```
 
+Looks good, doesn't it? And again no. Let's see what's going on.
+First of all: That ugly "while True:" in mule code. But let's assume we are good programmers and that is not a problem.
+As specified we have 4 mules running to serve our needs.
+But wait. Who says that 4 mules are good choice? How do we came up with this number. What if we have a very big request rate, so that 4 mules does not mangage to serve all requests in time. In that case the queue will fill up and we'll start loosing requests. This means that we also need to chose carefully the size of queue. But how? What must be the rationale behind that decision? No rationale other than practice, which can change and blow everything.
+"But wait" - you can say. - "We can scale the app to serve more requests."
+Ok. Package all this mess in docker and scale with replication. In that case the granularity of our scaling is 4 mules, plus processes running main code, etc. This is a classical wast of resources.
+What if we have a lot of models which must be served (maybe we are providing translation from 45 languages and have separate model trained for each pair). What must be the strategy? Load all in a single mule and probably run out of queue? Keep another 4 mules for each model and waste as much resources as possible?
