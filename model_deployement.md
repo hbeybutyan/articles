@@ -268,14 +268,14 @@ What if we have a lot of models which must be served (maybe we are providing tra
 Another thing to take care: What if mule takes the request and dies during serving it. We hang waiting for the result to appear in the cache.
 And it goes worse with each particular solution bringing new questions to the table.
 
-So what to do? Tadaaaam: Meet (Ray)[https://docs.ray.io/en/master/index.html]
+So what to do? Tadaaaam: Meet [Ray](https://docs.ray.io/en/master/index.html).
 Lets not talk a lot about how good it is and start using it.
 I am not going to describe all the steps of deploying Ray. It is well described in the documentation. Rahther we'll look into simple usecase convering what we had earlier with ngnix and uwsgi. BTW, ray has incrediblely responsive community. Try asking your questions on Slack channel if you have one.
 
-We asuume that you have kubernates and kubectl configured to interact with it. If not, you can experiment with (minikube)[https://minikube.sigs.k8s.io/docs/start/].
-It is well documented how you can (deploy Ray cluster on you kubernetes)[https://docs.ray.io/en/master/cluster/kubernetes.html].
+We asuume that you have kubernates and kubectl configured to interact with it. If not, you can experiment with [minikube](https://minikube.sigs.k8s.io/docs/start/).
+It is well documented how you can [deploy Ray cluster on you kubernetes](https://docs.ray.io/en/master/cluster/kubernetes.html).
 To keep it short:
-1. Download from (repo)[https://github.com/ray-project/ray/tree/master/doc/kubernetes] the configuration files:
+1. Download from [repo](https://github.com/ray-project/ray/tree/master/doc/kubernetes) the configuration files:
 2. Create namespace in the kubernates with
 ```
 kubectl create -f ray/doc/kubernetes/ray-namespace.yaml
@@ -310,7 +310,7 @@ Yeeehaaa. It is there. Try to request it. And you know what? It comes with candi
 
 Lets talk a little about what's going on above.
 First we initialize ray runtime. This assumes there is already a long living Ray cluster which can be reached and to which we connect.
-Afterwards we start (Ray Serve)[https://docs.ray.io/en/master/serve/index.html] on it. (Serve)[https://docs.ray.io/en/master/serve/index.html] is the cream of our donut. It's created on top of (Ray actors)[https://docs.ray.io/en/master/actors.html#actor-guide], it is framework agnostic, it is python-first, it is Rayish. Some key concepts of serve we used here:
+Afterwards we start [Ray Serve](https://docs.ray.io/en/master/serve/index.html) on it. [Serve](https://docs.ray.io/en/master/serve/index.html) is the cream of our donut. It's created on top of [Ray actors](https://docs.ray.io/en/master/actors.html#actor-guide), it is framework agnostic, it is python-first, it is Rayish. Some key concepts of serve we used here:
 Backend - this is the business logic of the application. So in our case this is FancyModel with all it's structure, and interface.
 Endpoint - this is what allows us to interact with backends via HTTP. Endpoints can have one or multiple backends (for example multiple models of translation from armenian to english can be served under one endpoint).
 If you noticed when starting Ray Serve we specified "detached=True". This is because the lifecycle of Ray Serve is coupled with the client which is returned from serve.start().
