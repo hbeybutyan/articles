@@ -270,19 +270,51 @@ And it goes worse with each particular solution bringing new questions to the ta
 
 So what to do? Tadaaaam: Meet (Ray)[https://docs.ray.io/en/master/index.html]
 Lets not talk a lot about how good it is and start using it.
-I am not going to describe all the steps of deploying Ray. It is well described in the documentation. Also thay have incrediblely responsive community. Try asking your questions on Slack channel if you have one.
-So, assuming there is aleady ray cluster launched deploying our model will be something like:
+I am not going to describe all the steps of deploying Ray. It is well described in the documentation. Rahther we'll look into simple usecase convering what we had earlier with ngnix and uwsgi. BTW, ray has incrediblely responsive community. Try asking your questions on Slack channel if you have one.
+
+We asuume that you have kubernates and kubectl configured to interact with it. If not, you can experiment with (minikube)[https://minikube.sigs.k8s.io/docs/start/].
+It is well documented how you can (deploy Ray cluster on you kubernetes)[https://docs.ray.io/en/master/cluster/kubernetes.html].
+To keep it short:
+1. Download from (repo)[https://github.com/ray-project/ray/tree/master/doc/kubernetes] the configuration files:
+2. Create namespace in the kubernates with
+```
+kubectl create -f ray/doc/kubernetes/ray-namespace.yaml
+```
+3. Deploy ray cluster with:
+```
+kubectl apply -f ray/doc/kubernetes/ray-cluster.yaml
+```
+Definitely you need to look little more into this yaml files to understand whats going on. But those are pretty self explanatory and with the little googling even not experienced user of kubernates can understand what's going on there.
+
+We are done. Ray is up and running on your kubernates.
+Check it if you want:
+```
+kubectl get pods -n ray
+```
+You can see 3 worker nodes there. Want to change it? Change the number of worker node replicas in above yaml, reapply the config and find out as much of workers as you want.
+Go further and kill one of workers - it will rise again. Configure autoscaling - there is even a kubernates operator for autoscaling. And there is more of kubernates like nitty-gritty features.
+
+Now, assuming there is aleady ray cluster launched deploying our model will be something like:
 
 ```
+import ray
+from ray import serve
+from FancyModel import FancyModel
 # connect to Ray cluster
 ray.init(address="auto")
-serve.start(detached=True, http_options={"host": "0.0.0.0"})
+client = serve.start(detached=True, http_options={"host": "0.0.0.0"})
 client.create_backend("lr:v1", FancyModel)
 client.create_endpoint("fancy_predictor", backend="lr:v1", route="/predict")
 ```
-Look at github for detailed test setup on your local minikube.
-
 Yeeehaaa. It is there. Try to request it. And you know what? It comes with candies: scaling, incremental rollout, splitting traffic between backends (say different versions of trained model), session affinity, monitoring and many more.
+
+Lets talk a little about what's going on above.
+First we initialize ray runtime. This assumes there is already a long living Ray cluster which can be reached and to which we connect.
+Afterwards we start (Ray Serve)[https://docs.ray.io/en/master/serve/index.html] on it. (Serve)[https://docs.ray.io/en/master/serve/index.html] is the cream of our donut. It's created on top of (Ray actors)[https://docs.ray.io/en/master/actors.html#actor-guide], it is framework agnostic, it is python-first, it is Rayish. Some key concepts of serve we used here:
+Backend - this is the business logic of the application. So in our case this is FancyModel with all it's structure, and interface.
+Endpoint - this is what allows us to interact with backends via HTTP. Endpoints can have one or multiple backends (for example multiple models of translation from armenian to english can be served under one endpoint).
+If you noticed when starting Ray Serve we specified "detached=True". This is because the lifecycle of Ray Serve is coupled with the client which is returned from serve.start().
+Once it goes out of scope the serve instance will be destroyed. But as we remember we need long living models, so those are not loaded with each request. Detached Serve solves this issue.
 
 ## Summary
 
