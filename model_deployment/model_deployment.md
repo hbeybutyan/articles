@@ -105,7 +105,7 @@ Add uwsgi ini file:
 module = main
 callable = app
 ```
-You can view the project structure in ####GITHUB REPO...
+You can view the project structure [github repo](https://github.com/hbeybutyan/articles/tree/main/model_deployment)
 
 Build ... 
 ```
