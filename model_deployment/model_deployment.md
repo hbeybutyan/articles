@@ -16,45 +16,47 @@ And, at the end, after torturing you with all these nightmare, we'll finish with
 
 
 The most part of resources available in net suggest you to deploy ML model behind a Flask API and serve it.
-Something like [this (Thanks to Luigi Patruno for good series of articles)](https://mlinproduction.com/):
+Something like this [Thanks to Luigi Patruno for good series of articles](https://mlinproduction.com/):
 
 
 ```
-import logging
-
 from flask import Flask, request
 
 app = Flask(__name__)
-
 model = None
+
+
+def some_fancy_loading_logic():
+    # Load your model here
+    return None
+
 
 @app.before_first_request
 def load_model():
     global model
     model = some_fancy_loading_logic()
 
+
 @app.route('/predict', methods=['POST'])
 def predict():
-    """Return a machine learning prediction."""
     global model
     data = request.get_json()
-    loginfo('Incoming data: {}'.format(data))
     prediction = model.predict(data)
     inp_out = {'input': data, 'prediction': prediction}
-    loginfo(inp_out)
     return inp_out
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
+
 ```
 
 It's incredible. Isn't it?
 Short answer: No.
-Mid size long answer:
+Long answer:
 Here is a short article describing why: [Flask Is Not Your Production Server](https://build.vsupalov.com/flask-web-server-in-production/)
 and [Official documentation](https://flask.palletsprojects.com/en/1.1.x/tutorial/deploy/#run-with-a-production-server) clearly stating not to use flask internal server but rather use a production ready WSGI server. So we'll start with that.
-To acomplish this task, keeping in mind the golden rule (If somebody has done it - use it, don't invent it again!) we'll use [this](https://github.com/tiangolo/uwsgi-nginx-flask-docker) as a parent docker image (thanks to [Sebastián Ramírez](https://github.com/tiangolo)). As described in the repo, there are better alternatives, but as we are going to use this for demonstration purposes, the image suffices all our needs.
-And here is the final Dockerfile we'll use to create image:
+To acomplish this task, keeping in mind the golden rule (If somebody has done it - use it, don't invent it again!) we'll use [this](https://github.com/tiangolo/uwsgi-nginx-flask-docker) as a parent docker image (thanks to [Sebastián Ramírez](https://github.com/tiangolo)). The image suffices all our needs.
+And here is the Dockerfile we'll use to create image:
 ```
 FROM tiangolo/uwsgi-nginx-flask:python3.6
 
@@ -63,51 +65,48 @@ RUN pip3 install --upgrade pip \
   && pip3 install -r /tmp/requirements.txt
 
 COPY ./app /app
-
-#COPY entry.sh /entrypoint.sh
-#RUN chmod +x /entrypoint.sh
 ```
-As usual, requirements.txt will contain all the building boxex for our project (Tensorflow, Numpy, etc.).
-The entrypoint.sh is used by parent image as an ENTRYPOINT (sounds too philosophyc), still if you want to understand what is entrypoint in dockerfil - google it, or read [this](https://docs.docker.com/engine/reference/builder/#understand-how-cmd-and-entrypoint-interact).
+As usual, requirements.txt will contain all the building boxes for our project (Tensorflow, Numpy, etc.).
+The entrypoint.sh is used by parent image as an ENTRYPOINT (sounds too philosophyc), still if you want to understand what is entrypoint in dockerfile - google it, or read [this](https://docs.docker.com/engine/reference/builder/#understand-how-cmd-and-entrypoint-interact).
 Basicaly  this is what your container will do once started. So if you want to customize the behavior of container customize the file. Otherwise leave it as is.
 And the meat of the dockerfile - /app directory.
 This is there all the magic will happen. This is the app which will be run in wsgi to serve our model.
-To understand fancy things happening when deploying your flask app wioth nginx and wsgi look at [this](https://flask.palletsprojects.com/en/1.0.x/deploying/uwsgi/).
+To understand fancy things happening when deploying your flask app with nginx and wsgi look at [this](https://flask.palletsprojects.com/en/1.0.x/deploying/uwsgi/).
 
 Let's create a simple main.py with following content:
 
 ```
-import sys
-
 from flask import Flask
 
 app = Flask(__name__)
 
 
-@app.route("/")
-def are_you_sure():
+@app.route('/predict', methods=['POST'])
+def predict():
     return "Still want to continue?"
 
 
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True, port=80)
+    app.run(host="127.0.0.1", debug=True, port=8080)
 ```
 
-This is toop simple to comment something.
+This is too simple to comment something.
 Now lets create a class which will represent our trained model.
 We'll load the model once an instace is created and make predictions per user request. If translated to Python:
 
 ```
 from time import sleep
 
-class FancyModel:
-  def __init__(self):
-    # Here we load pretrained model. It lasts some long period
-    sleep(0.05)
 
-  def predict(self, text):
-    sleep(0.005)
-    return "Can't tell anything smart about: {}".format(text)
+class FancyModel:
+    def __init__(self):
+        # Here we load pretrained model. It lasts some long period
+        sleep(0.05)
+
+    def predict(self, text):
+        sleep(0.005)
+        return "Can't tell anything smart about: {}".format(text)
 ```
 
 The article is not about any particular model or ML probem. That is why we modeled a result of long sleepless nights, of tremedous work you have done to obtain a model which at last behaves somewhat reasonable, with this simple class.
@@ -118,21 +117,22 @@ Here we keep it simple. We assume that loading a model takes 50mls and making pr
 Glueing all this together we have this:
 
 ```
-import sys
+from flask import Flask, request
 from FancyModel import FancyModel
-
-from flask import Flask
 
 app = Flask(__name__)
 
 
-@app.route("/")
-def are_you_sure():
+@app.route('/predict', methods=['POST'])
+def predict():
     fnc = FancyModel()
-    return fnc.predit(request.get_json().text)
+    data = request.get_json()
+    return fnc.predict(data["text"])
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True, port=80)
+    app.run(host="127.0.0.1", debug=True, port=8080)
+
 ```
 
 This is ugly. With each incoming request we load the model.
@@ -141,25 +141,25 @@ I bet they'll miss your sign on next year contract.
 So let's go little further and do another ugly thing.
 
 ```
-import sys
+from flask import Flask, request
 from FancyModel import FancyModel
 
-from flask import Flask
-
-fnc = FancyModel()
 app = Flask(__name__)
+fnc = FancyModel()
 
 
-@app.route("/")
-def are_you_sure():
-    return fnc.predit(request.get_json().text)
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.get_json()
+    return fnc.predict(data["text"])
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", debug=True, port=80)
+    app.run(host="127.0.0.1", debug=True, port=8080)
 ```
 
 Yeeehaa. It does not need to load model with each request now. Isn't this good? Definitely No.
-The proiblem with this is that some frameworks you may use may be not thread safe.
+The problem with this is that some frameworks you may use, may be not thread safe.
 For example google "tensorflow fork safety". And this may be the case not only with tensorflow and forking.
 So let's go further. We need each model to live in it's own process.
 Here we have multiple options. E.g. go ahead with pure python. Create a pool of long living processes, take care of lifetime of those etc. 
