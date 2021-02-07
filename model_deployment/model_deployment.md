@@ -46,16 +46,28 @@ def predict():
     return inp_out
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=80, debug=True)
 
+```
+
+And package it in docker with:
+```
+FROM python:3.6
+
+COPY ./requirements.txt /tmp
+RUN pip3 install --upgrade pip \
+  && pip3 install -r /tmp/requirements.txt
+
+COPY ./app /app
+CMD ["python", "/app/main.py"]
 ```
 
 It's incredible. Isn't it?
 Short answer: No.
-Long answer:
+Long answer: If you start this and look into logs, it shouts to you " WARNING: This is a development server. Do not use it in a production deployment."
 Here is a short article describing why: [Flask Is Not Your Production Server](https://build.vsupalov.com/flask-web-server-in-production/)
 and [Official documentation](https://flask.palletsprojects.com/en/1.1.x/tutorial/deploy/#run-with-a-production-server) clearly stating not to use flask internal server but rather use a production ready WSGI server. So we'll start with that.
-To acomplish this task, keeping in mind the golden rule (If somebody has done it - use it, don't invent it again!) we'll use [this](https://github.com/tiangolo/uwsgi-nginx-flask-docker) as a parent docker image (thanks to [Sebastián Ramírez](https://github.com/tiangolo)). The image suffices all our needs.
+To acomplish this task, and keeping in mind the golden rule (If somebody has done it - use it, don't invent it!) we'll use [this](https://github.com/tiangolo/uwsgi-nginx-flask-docker) as a parent docker image (thanks to [Sebastián Ramírez](https://github.com/tiangolo)). The image suffices all our needs.
 And here is the Dockerfile we'll use to create image:
 ```
 FROM tiangolo/uwsgi-nginx-flask:python3.6
@@ -66,14 +78,11 @@ RUN pip3 install --upgrade pip \
 
 COPY ./app /app
 ```
-As usual, requirements.txt will contain all the building boxes for our project (Tensorflow, Numpy, etc.).
-The entrypoint.sh is used by parent image as an ENTRYPOINT (sounds too philosophyc), still if you want to understand what is entrypoint in dockerfile - google it, or read [this](https://docs.docker.com/engine/reference/builder/#understand-how-cmd-and-entrypoint-interact).
-Basicaly  this is what your container will do once started. So if you want to customize the behavior of container customize the file. Otherwise leave it as is.
-And the meat of the dockerfile - /app directory.
+The meat of the dockerfile - /app directory.
 This is there all the magic will happen. This is the app which will be run in wsgi to serve our model.
 To understand fancy things happening when deploying your flask app with nginx and wsgi look at [this](https://flask.palletsprojects.com/en/1.0.x/deploying/uwsgi/).
 
-Let's create a simple main.py with following content:
+First of all, let's create a simple main.py with following content:
 
 ```
 from flask import Flask
@@ -88,7 +97,27 @@ def predict():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", debug=True, port=8080)
+    app.run(host="0.0.0.0, debug=True, port=80)
+```
+Add uwsgi ini file:
+```
+[uwsgi]
+module = main
+callable = app
+```
+You can view the project structure in ####GITHUB REPO...
+
+Build ... 
+```
+docker build -t simple_app .
+```
+Run ...
+```
+docker run -p 8080:8080 -it simple_app:latest
+```
+Request ...
+```
+curl -X POST -d {\"text\":\"tadaaam\"} 127.0.0.1:80/predict -H "Content-Type: application/json"
 ```
 
 This is too simple to comment something.
@@ -128,14 +157,10 @@ def predict():
     fnc = FancyModel()
     data = request.get_json()
     return fnc.predict(data["text"])
-
-
-if __name__ == "__main__":
-    app.run(host="127.0.0.1", debug=True, port=8080)
-
 ```
+Again - Build ... Run ... Request ...
 
-This is ugly. With each incoming request we load the model.
+But wait, this is ugly. With each incoming request we load the model.
 This is like if you'll call tech support of your TV provider and they'll keep you on line for an hour.
 I bet they'll miss your sign on next year contract.
 So let's go little further and do another ugly thing.
@@ -155,12 +180,13 @@ def predict():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", debug=True, port=8080)
+    app.run(host="0.0.0.0", debug=True, port=80)
 ```
+Once again - Build ... Run ... Request ...
 
 Yeeehaa. It does not need to load model with each request now. Isn't this good? Definitely No.
 The problem with this is that some frameworks you may use, may be not thread safe.
-For example google "tensorflow fork safety". And this may be the case not only with tensorflow and forking.
+For example try to google "tensorflow fork safety". And this may be the case not only with tensorflow and forking.
 So let's go further. We need each model to live in it's own process.
 Here we have multiple options. E.g. go ahead with pure python. Create a pool of long living processes, take care of lifetime of those etc. 
 We'll not do so. Instead we'll use such a inhabitant of uwsgi as [mule](https://uwsgi-docs.readthedocs.io/en/latest/Mules.html).
@@ -170,10 +196,10 @@ user -> nginx -> uwsgi -> app.main -> queue -> mules -> cache -> uwsgi -> ngnix 
 
 Once http server gets the requst and forwards it to our application we:
     1. Generate a uuid for the request and put the request to the queue.
-    2. Messege the mules. If all the tasks are complete the mules are waiting for aknowledgement that there is a taks to serve.
+    2. Messege the mules. If all the tasks are complete the mules are waiting for aknowledgement that there is a task to serve.
     3. Wait for results to apear in the cache
 In their turn, mules:
-    1. Listen for the aknopwledgement messege.
+    1. Listen for the aknowledgement messege.
     2. Once it is received, poll the queue of tasks,
     3. Make prediction and add result to cache with request uuid as key
 
@@ -193,7 +219,7 @@ mule=hard_working_mule.py
 master = true
 queue = 100
 queue-blocksize = 2097152
-cache2 = name=fcache,items=10,blocksize=2097152
+cache2 = name=mcache,items=10,blocksize=2097152
 ```
 
 Let's go line by line.
@@ -210,12 +236,9 @@ With this we initiate a thread called "the cache sweeper". It's purpose is to re
 As promissed, this is what each mule is going to do:
 
 ```
+from FancyModel import FancyModel
 import uwsgi
 import json
-import os
-from FancyModel import FancyModel
-from serving.config import TEXT_KEY, CACHE_NAME
-
 
 if __name__ == '__main__':
     fnc = FancyModel()
@@ -225,16 +248,20 @@ if __name__ == '__main__':
         if req is None:
             continue
         json_in = json.loads(req.decode("utf-8"))
-        text = json_in[TEXT_KEY]
+        text = json_in["text"]
         # to store transliterations
         json_out = {"res": fnc.predict(text)}
-        uwsgi.cache_update(json_in.get("id"), json.dumps(json_out, ensure_ascii=False), 0, CACHE_NAME)
+        uwsgi.cache_update(json_in.get("id"), json.dumps(json_out, ensure_ascii=False), 0, "mcache")
 ```
 And the main logic:
 
 ```
-app = Flask(__name__)
-api = Api(app)
+from flask import Flask, request, Response
+import uuid
+import json
+import uwsgi
+
+CACHE_NAME = "mcache"
 
 def process_request(json_in):
     uid = str(uuid.uuid4())
@@ -252,15 +279,19 @@ def process_request(json_in):
                             mimetype="application/json")
 
 
+app = Flask(__name__)
+
+
 @app.route('/predict', methods=['POST'])
-def predict(source, target):
-    return process_request(request.get_json())
+def predict():
+    data = request.get_json()
+    return process_request(data)
 ```
 
 Looks good, doesn't it? And again no. Let's see what's going on.
-First of all: That ugly "while True:" in mule code. But let's assume we are good programmers and that is not a problem.
+First of all: That ugly "while True:" in mule code. But let's assume we are good, pedantic programmers and that is not a problem.
 As specified we have 4 mules running to serve our needs.
-But wait. Who says that 4 mules are good choice? How do we came up with this number. What if we have a very big request rate, so that 4 mules does not mangage to serve all requests in time. In that case the queue will fill up and we'll start loosing requests. This means that we also need to chose carefully the size of queue. But how? What must be the rationale behind that decision? No rationale other than practice, which can change and blow everything.
+But wait. Who says that 4 mules are good choice? How do we came up with this number. What if we have a very big request rate, so that 4 mules does not manaage to serve all requests in time. In that case the queue will fill up and we'll start loosing requests. This means that we also need to chose carefully the size of queue. But how? What must be the rationale behind that decision? No rationale other than practice, which can change and blow everything.
 "But wait" - you can say. - "We can scale the app to serve more requests."
 Ok. Package all this mess in docker and scale with replication. In that case the granularity of our scaling is 4 mules, plus processes running main code, etc. This is a classical wast of resources.
 What if we have a lot of models which must be served (maybe we are providing translation from 45 languages and have separate model trained for each pair). What must be the strategy? Load all in a single mule and probably run out of queue? Keep another 4 mules for each model and waste as much resources as possible?
