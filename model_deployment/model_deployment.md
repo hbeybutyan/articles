@@ -16,7 +16,7 @@ And, at the end, after torturing you with all these nightmare, we'll finish with
 
 
 The most part of resources available in net suggest you to deploy ML model behind a Flask API and serve it.
-Something like this [Thanks to Luigi Patruno for good series of articles](https://mlinproduction.com/):
+Something like [this (Thanks to Luigi Patruno for good series of articles)](https://mlinproduction.com/):
 
 
 ```
@@ -51,10 +51,9 @@ if __name__ == '__main__':
 It's incredible. Isn't it?
 Short answer: No.
 Mid size long answer:
-Flask internal server is not supposed to be used for production.
 Here is a short article describing why: [Flask Is Not Your Production Server](https://build.vsupalov.com/flask-web-server-in-production/)
-and [Official documentation](https://flask.palletsprojects.com/en/1.1.x/tutorial/deploy/#run-with-a-production-server) clearly stating not to use flask internal server but rather use a production WSGI server. So we'll start with that. 
-To acomplish this task, keeping in mind the golden rule (If somebody has done it - use it, don't invent it again!) we'll use [this] https://github.com/tiangolo/uwsgi-nginx-flask-docker as a parent docker image (thanks to [Sebastián Ramírez](https://github.com/tiangolo)). As described in the repo, there are better alternatives, but as we are going to use this for demonstrativon puporses, the image suffices all our needs.
+and [Official documentation](https://flask.palletsprojects.com/en/1.1.x/tutorial/deploy/#run-with-a-production-server) clearly stating not to use flask internal server but rather use a production ready WSGI server. So we'll start with that.
+To acomplish this task, keeping in mind the golden rule (If somebody has done it - use it, don't invent it again!) we'll use [this](https://github.com/tiangolo/uwsgi-nginx-flask-docker) as a parent docker image (thanks to [Sebastián Ramírez](https://github.com/tiangolo)). As described in the repo, there are better alternatives, but as we are going to use this for demonstration purposes, the image suffices all our needs.
 And here is the final Dockerfile we'll use to create image:
 ```
 FROM tiangolo/uwsgi-nginx-flask:python3.6
